@@ -1,0 +1,100 @@
+{
+    "read_prefix": "/home/lky/hf/output",
+    "prefix": "/home/lky/volume_speculate/output",
+    "wind_engine": "mysql+pymysql://windread:nCqbxUUpKhmXKpkhzH8dRTpH@172.19.33.110:3376/wind",
+    "files_path":{
+        "log": "log/log",
+        "whole_coefs": "whole_coefs.csv",
+        "pnl_df": "pnl",
+        "returns_df": "returns",
+        "trade_pnl_df": "trade_pnl_df",
+        "date_idx": "date_idx",
+        "signal_df": "signal",
+        "IF": "IF_minute.csv"
+    },
+    "dir_path":{
+        "log": "log",
+        "quote": "QUOTE",
+        "h5": "h5",
+        "pnl": "pnl",
+        "returns": "returns",
+        "signal": "signal",
+        "settle_close": "settle_close",
+        "stock_price": "stock_price",
+        "week": "week",
+        "corr": "corr",
+        "resid": "resid",
+        "pair": "pair_trading",
+        "coef": "coef",
+        "ratio": "ratio",
+        "spot_futures": "spot_futures"
+    },
+    "rule":{
+        "start": 33300,
+        "open": 33360,
+        "close": 54000,
+        "end": 54900,
+        "tail_timing": 53098,
+        "sell_timing": 36000,
+        "sell_datetime": "10:00:00.000",
+        "buy_timing": 54660,
+        "buy_datetime": "15:11:00.000"
+    },
+    "new_rule":{
+        "start": 34200,
+        "open": 34260,
+        "close": 54900,
+        "end": 55800,
+        "tail_timing": 53998,
+        "sell_timing": 36000,
+        "sell_datetime": "10:00:00.000"
+    },
+    "buy_time":{
+        "week": 53940,
+        "week_datetime": "14:59:00.000",
+        "intraday": 55560,
+        "intraday_datetime": "15:26:00.000"
+    },
+    "tail_time":{
+        "week": 53040,
+        "week_datetime": "14:45:00.000",
+        "intraday": 53998,
+        "intraday_datetime":"15:00:00.000"
+    },
+    "shen_time":{
+        "AM":{
+            "start": 33300,
+            "open": 33360,
+            "close": 40800,
+            "end": 41280
+        },
+        "PM":{
+            "start": 46800,
+            "open": 46860,
+            "close": 54000,
+            "end": 54780
+        },
+        "new_AM":{
+            "start": 34200,
+            "open": 34260,
+            "close": 40800,
+            "end": 41280
+        },
+        "new_PM":{
+            "start": 46800,
+            "open": 46860,
+            "close": 54900,
+            "end": 55680
+        }
+    },
+    "parameters": {
+        "threshold": 1,
+        "period": 20,
+        "lags": 5
+    },
+    "rule_date": "20160101",
+    "contract_type": "IF",
+    "tail": 15,
+    "last_trade_sod": 54000,
+    "last_trade_time": "15:00:00"
+}
