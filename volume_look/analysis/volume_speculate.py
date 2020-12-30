@@ -5,75 +5,19 @@ import os
 import datetime
 import json
 import matplotlib.pyplot as plt
-# from statsmodels.tsa.arima.api import ARIMA
+from statsmodels.tsa.arima.api import ARIMA
+import statsmodels.api as sm
 from volume_look.util.utility import Utility
-
-config_path = r'D:\Document\SJTU\thesis\program\volume_look\config.json'
-with open(config_path, 'r') as f:
-    config = json.load(f)
+from volume_look.analysis.build_data import BuildData
 
 class VolumeSpeculate(object):
     def __init__(self, start_date, end_date):
         self.start_date = start_date
         self.end_date = end_date
 
-    def get_main_contract(self, util, date):
-        """get the main contract"""
-        data = util.open_data(date)
-        if data.empty:
-            return None
-        start_time = util.shen_start_time(date, True)
-        temp = data[data.sod < (start_time - 60)]
-
-        if temp['oi'].empty:
-            temp = data[data.sod == start_time]
-            temp = temp[temp.ts == max(temp.ts)]
-        else:
-            temp = temp[temp.oi == max(temp.oi)] 
-        return temp['ticker'].iloc[0]
-
-    def get_main_data(self, util, date):
-        """get the data frame"""
-        data = util.open_data(date)
-        instrument = self.get_main_contract(util, date)
-
-        start_time = util.get_start_time(date)
-        end_time = util.get_end_time(date)
-        
-        idx = data[(data['ticker'] == instrument) & (data['sod'] >= start_time) & (
-                        data['sod'] < end_time)].index.tolist()
-        main_data = data.loc[idx, :]
-        main_data = main_data.dropna()
-        return main_data
-
-    def cal_remain_maturity(self, util, date):
-        remain_dict = dict()
-        data = util.open_data(date)
-        if data.empty:
-            return None
-        ticker_lst = data['ticker'].unique()
-        mature_dict = dict()
-        for ticker in ticker_lst:
-            maturity_date = util.get_ticker_maturity(ticker)
-            maturity_sod = maturity_date + ' ' + util.last_trade_time()
-            remain = (datetime.datetime.strptime(maturity_date, '%Y%m%d') - datetime.datetime.strptime(date, '%Y%m%d')).days
-            remain_dict[ticker] = remain
-            mature_dict[ticker] = maturity_sod
-
-        data['remain_date'] = data['ticker']
-        data = data.replace({'remain_date': remain_dict})
-        data['mature'] = data['ticker']
-        data = data.replace({"mature": mature_dict})
-
-        datetime_secs = data['datetime'].apply(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d %H:%M:%S.%f'))
-        datetime_mature = data['mature'].apply(lambda x: datetime.datetime.strptime(x, '%Y%m%d %H:%M:%S'))
-
-        data['remain_secs'] = datetime_mature - datetime_secs
-        data['remain_secs'] = data['remain_secs'].apply(lambda x: x.days * 24 * 3600 + x.seconds)
-        return data
-
     def total_volume(self, util, date):
-        data = self.cal_remain_maturity(util, date)
+        bd = BuildData()
+        data = bd.cal_remain_maturity(util, date)
         if data is None:
             return [0], [0], pd.Series([0])
         ticker_lst = data['ticker'].unique()
@@ -108,18 +52,62 @@ class VolumeSpeculate(object):
     def arma(self, util):
         pass
     
-    def cal_corr(self, util, date):
-        data = self.cal_remain_maturity(util, date)
-        data['datetime'] = data['datetime'].apply(lambda x: x[:-4])
+    def cal_corr(self, util, date, k):
+        bd = BuildData()
+        data = bd.cal_remain_maturity(util, date)
+        data['datetime'] = data['datetime'].apply(lambda x: x[:-6] + '00')
         data = data.set_index(['datetime'])
-        stock_price = util.get_stock_price()
-        new_date = datetime.datetime.strptime(date, '%Y%m%d').strftime('%Y-%m-%d')
-        date_stock_price = stock_price[stock_price.index.str.contains(new_date)]
-        corr = np.corrcoef(date_stock_price, data)
-        return corr
+        data = data[~data.index.duplicated(keep='first')]
+        data.index = data['sod']
+        if k == 0:
+            back_date = date
+        else:
+            back_date = util.get_week_date(date, k)
+        stock_price = util.get_stock_price(back_date)
+        idx = stock_price['sod']
+        data = data.reindex(index = idx)
+        stock_price = stock_price.set_index(['sod'])
+        corr_df = pd.DataFrame()
+        corr_df['cp'] = data['cp']
+        corr_df['stock'] = stock_price['close']
+        corr = corr_df.corr()
+        return corr['stock'].loc['cp']
+    
+    def get_big_data(self, util):
+        bd = BuildData()
+        date_lst = util.generate_date_lst(self.start_date, self.end_date)
+        whole_data = pd.DataFrame()
+        for i in range(0, len(date_lst)):
+            date = date_lst[i]
+            df = bd.cal_remain_maturity(util, date)
+            whole_data = whole_data.append(df)
+        return whole_data
+
+    def mature_corr(self, util, date, k):
+        # bigdata = self.get_big_data(util)
+        # data = bigdata[(bigdata['remain_date'] <= k + 1) & (bigdata['remain_date'] >= k - 1)]
+        bd = BuildData()
+        stock_price = util.get_stock_price(date)
+        data = bd.cal_remain_maturity(util, date)
+        ticker_lst = data['ticker'].unique()
+        corr_df = pd.DataFrame()
+
+        for ticker in ticker_lst:
+            tmp_data = data[data['ticker'] == ticker]
+            tmp_data.index = tmp_data['sod']
+            tmp_data = tmp_data[~tmp_data.index.duplicated(keep='first')]
+            corr_df[ticker] = tmp_data['cp']
+
+        stock_price.index = stock_price['sod']
+        corr_df['stock'] = stock_price['close']
+        stock = corr_df['stock'].dropna()
+        corr_df = corr_df.reindex(index = stock.index).fillna(method = 'ffill')
+        corr = corr_df.corr()
+        corr['remain_date'] = data['remain_date'].unique().tolist() + [0]
+        return corr        
     
 def main():
-    config_path = r"D:\Document\SJTU\thesis\program\volume_look\config.json"
+    config_path = "/home/lky/volume_speculate/volume_look/config.json"
     with open(config_path, 'r') as f:
         config = json.load(f)
     
@@ -129,13 +117,18 @@ def main():
     vs = VolumeSpeculate(start_date, end_date)
     date_lst = util.generate_date_lst(start_date, end_date)
     corr_lst = []
-    for i in range(0, date_lst):
+    k = 0
+    for i in range(0, len(date_lst)):
         date = date_lst[i]
-        corr = vs.cal_corr(util, date)
+        # corr = vs.cal_corr(util, date, k)
+        corr = vs.mature_corr(util, date, k)
         corr_lst.append(corr)
+    df = pd.DataFrame()
+    df['corr'] = corr_lst
+    path = os.path.join(config['prefix'], config['dir_path']['corr'], str(k) + '_mature.csv')
+    df.to_csv(path)
     return corr_lst
+
 
 if __name__ == "__main__":
     main()
-
-

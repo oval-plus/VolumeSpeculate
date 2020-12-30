@@ -1,7 +1,7 @@
 {
-    "read_prefix": "D:\\Program\\risk\\",
+    "read_prefix": "/home/lky/hf/output",
     "prefix": "/home/lky/volume_speculate/output",
-    "wind_engine": "mysql+pymysql://windread:nCqbxUUpKhmXKpkhzH8dRTpH@10.124.165.248:3376/wind",
+    "wind_engine": "mysql+pymysql://windread:nCqbxUUpKhmXKpkhzH8dRTpH@172.19.33.110:3376/wind",
     "files_path":{
         "log": "log/log",
         "whole_coefs": "whole_coefs.csv",
@@ -21,8 +21,14 @@
         "signal": "signal",
         "settle_close": "settle_close",
         "stock_price": "stock_price",
-        "intraday": "intraday",
-        "week": "week"
+        "week": "week",
+        "corr": "corr",
+        "resid": "resid",
+        "pair": "pair_trading",
+        "coef": "coef",
+        "ratio": "ratio",
+        "spot_futures": "spot_futures",
+        "maluyao": "maluyao"
     },
     "rule":{
         "start": 33300,
@@ -84,8 +90,9 @@
     },
     "parameters": {
         "threshold": 1,
-        "period": 20,
-        "lags": 5
+        "delay": 20,
+        "lags": 5,
+        "time_lag": 2
     },
     "rule_date": "20160101",
     "contract_type": "IF",

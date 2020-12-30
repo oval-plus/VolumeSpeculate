@@ -69,6 +69,18 @@ class Utility(object):
         
         return old_date
     
+    def get_week_date(self, date, k):
+        """get a certain k date before the specify date"""
+        df = self.get_trade_calendar(date)
+        k = -k
+        old_date = df.iloc[k]
+        data = self.open_data(old_date)
+        while data.empty:
+            k -= 1
+            old_date = df.iloc[k]
+            data = self.open_data(old_date)
+        return old_date
+
     def get_price(self, df, time):
         """get the next price"""
         if df['sod'].iloc[-1] >= time:
@@ -180,7 +192,7 @@ class Utility(object):
             table_ori = table_ori.reset_index(drop = False)
             table_ori.columns = ['datetime', 'ticker', 'cp', 's1', 'b1', 'sv1', 'bv1', 'hp', 'lp', 'ts', 'tt', 'oi']
             table_ori['updatetime'] = table_ori['datetime'].apply(lambda x: str(x)[11:])
-            table_ori['updatetime'] = pd.to_datetime(table_ori['updatetime'])
+            table_ori['updatetime'] = pd.to_datetime(table_ori['updatetime'], format = '%H:%M:%S.%f')
             table_ori['sod'] = table_ori['updatetime'].apply(
                 lambda x: datetime.timedelta(hours = x.hour, minutes=x.minute, seconds=x.second).total_seconds())
             
@@ -263,7 +275,9 @@ class Utility(object):
         return start_time
     
     def get_end_time(self, date):
-        """get the end time"""
+        """get the end time
+            闭市时间
+        """
         specify_date = self.config['rule_date']
         if datetime.datetime.strptime(date[:10], '%Y%m%d') >= datetime.datetime.strptime(specify_date, '%Y%m%d'):
             end_time = self.config['new_rule']['end']
@@ -370,3 +384,19 @@ class Utility(object):
     def last_trade_time(self):
         last_time = self.config['last_trade_time']
         return last_time
+    
+    def get_moving_interval(self):
+        moving_interval = 120
+        return moving_interval
+
+    def get_maluyao_k(self):
+        k = 2
+        return k
+    
+    def get_delay(self):
+        delay = self.config["parameters"]["delay"]
+        return delay
+    
+    def get_time_lag(self):
+        lag = self.config["parameters"]["time_lag"]
+        return lag

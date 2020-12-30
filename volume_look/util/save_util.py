@@ -54,3 +54,33 @@ class SaveUtil(object):
         path = os.path.join(self.config['prefix'], self.config['dir_path']['pair'], 
                         self.config['dir_path']['spot_futures'], str(level), str(date) + '.csv')
         df.to_csv(path, header = True)
+
+    def save_signal_signal(self, df, date_lst, title, trade_at_mid=False, lags=0, delay=20):
+        start_date, end_date = date_lst[0], date_lst[-2]
+        name = str(start_date) + "_" + str(end_date) + \
+            "_" + str(trade_at_mid) + "_" + str(lags) + "_" + str(delay)
+
+        path = os.path.join(
+            self.config["prefix"],
+            self.config["dir_path"]["signal"],
+            self.config["dir_path"][title],
+            name + ".csv",
+        )
+        df.to_csv(path, encoding="utf-8-sig", header=True, index=False)
+
+    def save_signal_pnl(self, lst, date_lst, title, trade_at_mid=False, lags=0, delay=20):
+        df = pd.DataFrame()
+        df["pnl"] = lst
+        df["date"] = date_lst[:-1]
+
+        start_date, end_date = date_lst[0], date_lst[-2]
+        name = str(start_date) + "_" + str(end_date) + \
+            "_" + str(trade_at_mid) + "_" + str(lags) + "_" + str(delay)
+
+        path = os.path.join(
+            self.config["prefix"],
+            self.config["dir_path"]["pnl"],
+            self.config["dir_path"][title],
+            name + ".csv",
+        )
+        df.to_csv(path, encoding="utf-8-sig", header=True, index=False)
