@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.api import ARIMA
 import statsmodels.api as sm
 from scipy import optimize
+from functools import partial
 from volume_look.util.utility import Utility
 
 config_path = r"..."
@@ -16,7 +17,7 @@ with open(config_path, 'r') as f:
 
 util = Utility(config)
 start_date = '20191001'
-end_date = '20200201'
+end_date = '20200401'
 datelist = util.generate_date_lst(start_date, end_date)
 
 
@@ -24,8 +25,6 @@ def gather_data(util, date_lst):
     whole_df = pd.DataFrame()
     for i in range(0, len(date_lst)):
         date = date_lst[i]
-        if date == '20200102':
-            print('da')
         _df = util.open_data(date)
         _df['datetime'] = _df['datetime'].apply(
                 lambda x: x[:-3] + '000' if x[-3] < "5" else x[:-3] + '500')
@@ -38,15 +37,18 @@ def gather_data(util, date_lst):
         df['is_overnight'].iloc[1] = 1
         
         df['date'] = date
+        df = df[~df['datetime'].duplicated()]
 
         # future_2 = _df[_df['ticker'] == ticker_lst[2]]
         future_2 = _df[_df['ticker'] == ticker_lst[1]]
         df['spread'] = cal_extra_spread(df, future_2, date)['spread']
         new_cp = _df[_df['ticker'] == ticker_lst[1]]
+        new_cp = new_cp[~new_cp['datetime'].duplicated()]
         new_cp = new_cp.set_index(['datetime'])
         new_cp = new_cp.reindex(index = df['datetime'])
         new_cp.index = df.index
-        df['cp_2'] = new_cp['cp']
+        # df['cp_2'] = new_cp['cp']
+        df['mid_price_2'] = (new_cp['s1'] + new_cp['b1']) / 2
         whole_df = whole_df.append(df)
         print(date)
     return whole_df
@@ -74,25 +76,44 @@ def cal_extra_spread(futures_1, futures_2, date):
     
     # spread_df['datetime'] = futures_1['datetime']
     spread_df = spread_df.set_index(['datetime'])
+    spread_df = spread_df[~spread_df.index.duplicated()]
     spread_df = spread_df.reindex(index = futures_1['datetime'])
     spread_df.index = futures_1.index
     # spread_df.index = futures_1.index
     return spread_df
 
+def cons_theta_s(x, num):
+    return x[0] - num
 
+def cons_theta_l(x, num):
+    return -(x[0] - num)
+
+def cons_omega_s(x, num):
+    return x[1] - num
+
+def cons_omega_l(x, num):
+    return -(x[1] - num)
+
+def con_func(args):
+    con1 = {'type': 'ineq', 'fun': partial(cons_theta_s, num = args[0])}
+    con2 = {"type": "ineq", "fun": partial(cons_theta_l, num = args[0])}
+    con3 = {"type": "ineq", "fun": partial(cons_omega_s, num = args[1])}
+    con4 = {"type": "ineq", "fun": partial(cons_omega_l, num = args[1])}
+    return [con1, con2, con3, con4]
 # df = gather_data(util, datelist)
 # df.to_csv('df_beside.csv')
 
-df = pd.read_csv(r'df_beside.csv', index_col = 0)
+
+
+df = pd.read_csv(r'...', index_col = 0)
 k = 2
 ulist = []
 omegalist = []
-for i in range(40, len(datelist)):
-    i0 = i - 40
-    i1 = i0 + 10
-    i2 = i - 5
-    if datelist[i] == '20200102':
-        print('daole')
+theta_lst = []
+for i in range(10, len(datelist)):
+    i0 = i - 10
+    i1 = i0 + 5
+    i2 = i - 3
     df['date'] = df['date'].apply(str)
     df_0_1 = df[(df['date']>=datelist[i0]) & (df['date']<=datelist[i1])]
     df_1_2 = df[(df.date>=datelist[i1])&(df.date<=datelist[i])]
@@ -106,7 +127,7 @@ for i in range(40, len(datelist)):
     X['last_spread'] = X['spread'].shift(1)
     #MLE:bound constrained optimization
     args1 = (0.01,0.9, 0.01,0.9)
-    # cons = con(args1)
+    cons = (con_func(args1))
     X2 = (X['spread'].astype(float))
     X1 = (X['last_spread'].astype(float))
     def log_likelihood(params):
@@ -118,11 +139,12 @@ for i in range(40, len(datelist)):
         omega2 ** 2)*(X2 - X1 * np.exp(-theta * delta)) ** 2))
         return L
     params = [0.00001, 0.5]
-    # theta_omega=optimize.minimize(log_likelihood,x0=params,
-    # method='SLSQP',constraints=cons)
-    theta_omega = optimize.minimize(log_likelihood, x0 = params)
+    theta_omega=optimize.minimize(log_likelihood,x0=params,
+        method='SLSQP',constraints=cons)
+    # theta_omega = optimize.minimize(log_likelihood, x0 = params)
     theta = theta_omega.x[0]
     omega = theta_omega.x[1]
+    theta_lst.append([theta, omega])
     gt = np.mean(X.iloc[:-1].spread)
     gt_last = np.mean(X.iloc[1:].spread)
     u = 1 / theta * (gt - gt_last) + gt
@@ -130,20 +152,7 @@ for i in range(40, len(datelist)):
     omegalist.append([datelist[i],np.std(X.spread)])
 
 
-# future CSI short rate model (TAO XUAN)
-# meet Mon or Tue/Wed, told Samuel (set up database/ server) ask TAOXUAN
-# pair trading signal
-# web 
 
-# websocket (protocol)
-# 
-# 
-# Opensource database, not SQL (MongoDB / Redis / ...)
-# financial data 
-# 
-# full calibration time structure CSI index futures
-# model deviating too much (?)
-# camen
 u_df = pd.DataFrame(ulist)
 u_df.columns = ['date','u']
 omega_df = pd.DataFrame(omegalist)
@@ -153,14 +162,79 @@ df1 = pd.merge(df1, omega_df)
 df1['up'] = df1['u'] + k * df1['omega']
 df1['down'] = df1['u'] - k * df1['omega']
 
-df1.loc[df1.spread > df1.up,'holding_close'] = 1
-df1.loc[df1.spread > df1.up,'holding_far'] = -1
-df1.loc[df1.spread < df1.down,'holding_close'] = -1
-df1.loc[df1.spread < df1.down,'holding_far'] = 1
-df1['portfolio_ret'] = df1['holding_close'] * df1['cp'] + \
-    df1['holding_far'] * df1['cp_2']
-df1['commision'] = df1['cp'] * 0.000345
-df1['commision_2'] = df1['cp_2'] * 0.000345
+df1['holding_close'] = 0
+df1['holding_far'] = 0
+
+up_flag = 0
+down_flag = 0
+n = len(df1)
+for i in range(1, n):
+    if df1['spread'].iloc[i] > df1['up'].iloc[i]:
+        if not up_flag:
+            df1['holding_close'].iloc[i] = 1
+            df1['holding_far'].iloc[i] = -1
+            up_flag = 1
+            down_flag = 0
+        continue
+    if df1['spread'].iloc[i] < df1['down'].iloc[i]:
+        if not down_flag:
+            df1['holding_close'].iloc[i] = -1
+            df1['holding_far'].iloc[i] = 1
+            down_flag = 1
+            up_flag = 0
+
+df1['mid_price'] = (df1['s1'] + df1['b1']) / 2
+df1['portfolio_ret'] = df1['holding_close'] * df1['mid_price'] + \
+    df1['holding_far'] * df1['mid_price_2']
+# df1['commision'] = df1['mid_price'] * 0.000345
+# df1['commision_2'] = df1['mid_price_2'] * 0.000345
+
+trading_part = df1[df1['holding_close'] != 0]
+trading_part['commision'] = trading_part['mid_price'] * 0.000023
+trading_part['commision_2'] = trading_part['mid_price_2'] * 0.000023
+trading_part['mul'] = 0.000023
+
+n = len(trading_part)
+flag_date = ''
+for i in range(0, n):
+    
+    if trading_part['date'].iloc[i] == flag_date:
+        k += 1
+        if k % 2:
+            trading_part['commision'].iloc[i] = trading_part['mid_price'].iloc[i] * 0.000345
+            trading_part['commision_2'].iloc[i] = trading_part['mid_price_2'].iloc[i] * 0.000345
+            trading_part['mul'].iloc[i] = 0.000345
+    else:
+        k = 0
+    flag_date = trading_part['date'].iloc[i]
+
+real_pnl = pd.DataFrame()
+real_pnl['pnl'] = trading_part['portfolio_ret'] - trading_part['commision'] - trading_part['commision_2']
+real_pnl['date'] = trading_part['date']
+real_pnl['pnl_cumsum'] = real_pnl['pnl'].cumsum()
+
+print(real_pnl['pnl'].sum())
+
+plot_realpnl = real_pnl[~real_pnl['date'].duplicated()]
+plot_realpnl.index = pd.to_datetime(plot_realpnl['date'], format = '%Y%m%d')
+
+
+def datefmt_convert(date):
+    return datetime.datetime.strptime(date, '%Y%m%d').strftime('%Y-%m-%d')
+pnl_df = pd.read_csv(r'...', index_col = 0)
+start_date_plot = datelist[10]
+pnl_df = pnl_df[(pnl_df['date'] >= datefmt_convert(start_date_plot)) & (pnl_df['date'] <= datefmt_convert(end_date))]
+pnl_df['pnl'] = pnl_df['diff'].cumsum()
+pnl_nodu = pnl_df[~pnl_df['date'].duplicated()]
+# pnl_nodu.index = pnl_nodu['date']
+pnl_nodu.index = pd.to_datetime(pnl_nodu['date'])
+pnl_nodu['real_pnl'] = plot_realpnl['pnl_cumsum']
+
+fig, ax = plt.subplots()
+ax.plot(pnl_nodu['pnl'])
+ax.plot(pnl_nodu['real_pnl'])
+fig.autofmt_xdate()
+
 
 mask_df = pd.DataFrame()
 mask_df['pnl'] = df1['portfolio_ret'] - df1['commision'] - df1['commision_2']
