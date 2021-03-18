@@ -12,64 +12,53 @@ from scipy import optimize
 from functools import partial
 from volume_look.util.utility import Utility
 
-config_path = r"D:\Document\SJTU\thesis\program\volume_look\config.json"
+
+# 1minute
+config_path = r"..."
 with open(config_path, 'r') as f:
     config = json.load(f)
 
 util = Utility(config)
 start_date = '20190423'
-# end_date = '20200701'
-end_date = '20190601'
+# start_date = '20190510'
+end_date = '20200701'
+# end_date = '20190701'
 date_lst = util.generate_date_lst(start_date, end_date)
 
-def cal_main_data(data, t = 0):
-    ticker = data[~data['ticker'].duplicated()]['ticker'].iloc[t]
-    data = data[data['ticker'] == ticker]
-    data['datetime'] = data['datetime'].apply(
-        lambda x: x[:-3] + '000' if x[-3] < "5" else x[:-3] + '500')
-
-    data = data[~data.index.duplicated()]
-    data['std'] = data['cp'].rolling(window = 100).std()
-    data['mean'] = data['cp'].rolling(window = 100).mean()
-    data['mean+std'] = data['mean'] + k * data['std']
-    data['mean-std'] = data['mean'] - k * data['std']
-
-    data['buy'] = np.nan
-    buy_idx = data[data['mean+std'] < data['cp']]['buy'].index
-    data['buy'].loc[buy_idx] = 1
-
-    data['sell'] = np.nan
-    sell_idx = data[data['mean-std'] > data['cp']]['sell'].index
-    data['sell'].loc[sell_idx] = -1
-
-    return data
-
 def cal_portfolio_df(data):
-    # sell_n = data['sell'].sum()
-    # buy_n = data['buy'].sum()
-    # if data['buy'].iloc[-1].isnull():
-    #     data['sell'].iloc[-1] = -abs(buy_n + sell_n) if -abs(buy_n + sell_n) != 0 else data['sell'].iloc[-1]
-    # else:
-    #     data['sell'].iloc[-1] = -abs(buy_n + sell_n - 1) if -abs(buy_n + sell_n - 1) != 0 else data['sell'].iloc[-1]
-    #     data['buy'].iloc[-1] = np.nan
     sell_idx = data['sell'].dropna().index
     buy_idx = data['buy'].dropna().index
+    long_idx = data['long'].dropna().index
+    short_idx = data['short'].dropna().index
     data['commision_sell'] = np.nan
     data['commision_buy'] = np.nan
-    data['commision_sell'].loc[sell_idx] = data['cp'].loc[sell_idx] * 0.000345
-    data['commision_buy'].loc[buy_idx] = data['cp'].loc[buy_idx] * 0.000345
+    data['commision_short'] = np.nan
+    data['commision_long'] = np.nan
+    data['commision_sell'].loc[sell_idx] = data['cp'].loc[sell_idx] * 0.000023
+    data['commision_buy'].loc[buy_idx] = data['cp'].loc[buy_idx] * 0.000023
+    data['commision_long'].loc[long_idx] = data['cp_far'].loc[long_idx] * 0.000023
+    data['commision_short'].loc[short_idx] = data['cp_far'].loc[short_idx] * 0.000023
 
-    data['commision_sell'].iloc[-1] = data['cp'].iloc[-1] * data['sell'].iloc[-1] * 0.000345
+    data['commision_sell'].iloc[-1] = data['cp'].iloc[-1] * data['sell'].iloc[-1] * 0.000023
+    data['commision_short'].iloc[-1] = data['cp_far'].iloc[-1] * data['short'].iloc[-1] * 0.000023
 
     portfolio_df = pd.DataFrame(index = data.index, columns = ['sell'])
     portfolio_df['sell'] = data['sell'] * data['cp']
     portfolio_df['buy'] = data['buy'] * data['cp']
+    portfolio_df['short'] = data['short'] * data['cp_far']
+    portfolio_df['long'] = data['long'] * data['cp_far']
     portfolio_df['sell_vol'] = data['sell']
     portfolio_df['buy_vol'] = data['buy']
+    portfolio_df['short_vol'] = data['short']
+    portfolio_df['long_vol'] = data['long']
     portfolio_df['operation'] = portfolio_df['sell'].fillna(portfolio_df['buy'])
+    portfolio_df["operation_far"] = portfolio_df['short'].fillna(portfolio_df['long'])
     portfolio_df['commision_sell'] = data['commision_sell']
     portfolio_df['commision_buy'] = data['commision_buy']
+    portfolio_df["commision_long"] = data['commision_long']
+    portfolio_df["commision_short"] = data['commision_short']
     portfolio_df['commision'] = portfolio_df['commision_sell'].fillna(portfolio_df['commision_buy'])
+    portfolio_df['commision_far'] = portfolio_df["commision_short"].fillna(portfolio_df["commision_long"])
 
     portfolio_df = portfolio_df.dropna(axis = 0, how = 'all')
     portfolio_df['datetime'] = data['datetime']
@@ -103,6 +92,16 @@ def get_date_maturity(util, date):
     maturity_df = util.get_expiration_date(start_date, end_date)
     maturity_date = maturity_df[maturity_df['res'] == True].index[0]
     return maturity_date
+
+def generate_operate_idx(idx):
+    before = idx.iloc[0]
+    new_idx = [idx.index[0]]
+    for i in range(1, len(idx)):
+        bi = idx.iloc[i]
+        if int(bi - before) >= 120:
+            new_idx.append(idx.index[i])
+            before = idx.iloc[i]
+    return new_idx
 
 def cal_pnl(date_lst, k):
     n = len(date_lst)
@@ -141,38 +140,59 @@ def cal_pnl(date_lst, k):
         check_df['cp_far'] = far_data['cp']
         check_df['spread'] = check_df['cp'] - check_df['cp_far']
 
-        check_df['std'] = check_df['spread'].rolling(window = 1000).std()
-        check_df['mean'] = check_df['spread'].rolling(window = 1000).mean()
+        check_df['std'] = check_df['spread'].rolling(window = 1200).std()
+        check_df['mean'] = check_df['spread'].rolling(window = 1200).mean()
         check_df['mean+std'] = check_df['mean'] + k * check_df['std']
         check_df['mean-std'] = check_df['mean'] - k * check_df['std']
+        check_df['interval'] = [i for i in range(1, len(check_df) + 1)]
 
         if day_turn == 1:
             check_df['buy'] = np.nan
-            buy_idx = check_df[check_df['mean+std'] < check_df['spread']]['buy'].index[:20]
+            check_df['short'] = np.nan
+            _buy_idx = check_df[check_df['mean+std'] < check_df['spread']]["interval"]
+            times = 20 if (before_sell == -20 or before_sell == 0) else -int(before_sell)
+            buy_idx = generate_operate_idx(_buy_idx)[:times]
+
             check_df['buy'].loc[buy_idx] = 1
+            check_df["short"].loc[buy_idx] = -1
             check_df['sell'] = np.nan
-            sell_n = before_buy
+            check_df['long'] = np.nan
+            
+            short_n = check_df['short'].sum() + (-before_sell)
+            long_n = before_buy
+
             buy_n = check_df['buy'].sum() + before_sell
+            sell_n = before_buy
 
         if day_turn == -1:
             check_df['sell'] = np.nan
-            sell_idx = check_df[check_df['mean-std'] > check_df['spread']]['sell'].index[:20]
+            check_df['long'] = np.nan
+            _sell_idx = check_df[check_df['mean-std'] > check_df['spread']]["interval"]
+            times = 20 if (before_buy == 20 or before_buy == 0) else int(before_buy)
+            sell_idx = generate_operate_idx(_sell_idx)[:times]
+
             check_df['sell'].loc[sell_idx] = -1
+            check_df['long'].loc[sell_idx] = 1
             check_df['buy'] = np.nan
+            check_df["short"] = np.nan
             sell_n = check_df['sell'].sum() + before_buy
+            long_n = check_df["long"].sum() + (-before_buy)
             buy_n = before_sell
+            short_n = before_sell
         
         if date == get_date_maturity(util, date):
             if day_turn == 1:
                 check_df['buy'] = np.nan
+                check_df['short'] = np.nan
             else:
                 check_df['sell'].iloc[-1] = sell_n
+                check_df['long'].iloc[-1] = long_n
             before_buy, before_sell = 0, 0
             operation_df = cal_portfolio_df(check_df)
             operation_df['day_turn'] = day_turn
+            operation_df['date'] = date
             day_turn = 1
             whole_df = whole_df.append(operation_df)
-
             continue
 
         operation_df = cal_portfolio_df(check_df)
@@ -186,36 +206,80 @@ def cal_pnl(date_lst, k):
     return whole_df
 # print(portfolio_df['pnl'].sum())
 
-k = 2
+k = 2.5
 whole_df = cal_pnl(date_lst, k)
-whole_df['cp'] = (whole_df['operation'] - whole_df['commision']).cumsum()
+whole_df['cp'] = (whole_df['operation'] + whole_df['operation_far'] - 
+            whole_df['commision'] - whole_df["commision_far"]).cumsum()
+# whole_df['operation_all'] = whole_df['operation'].fillna(whole_df['operation_far'])
+# whole_df['commision_all'] = whole_df['commision'].fillna(whole_df['commision_far'])
+# whole_df["cp"] = (whole_df['operation_all'] - whole_df['commision_all']).cumsum()
+cp_idx = [i for i in range(1, len(whole_df), 2)]
+real_pnl = whole_df["cp"].iloc[cp_idx].dropna()
+plt.plot(real_pnl.values)
+
+whole_df.groupby(['date']).count()
+
+buy_df = whole_df[(whole_df['day_turn'] == 1) & (whole_df['buy'].notnull())]
+sell_df = whole_df[(whole_df["day_turn"] == -1) & (whole_df['sell'] != 0)]
+long_df = whole_df[(whole_df["day_turn"] == -1) & (whole_df['long'] != 0)]
+short_df = whole_df[(whole_df["day_turn"] == 1) & (whole_df["short"].notnull())]
+buy_n = len(buy_df)
+sell_n = len(sell_df)
+long_n = len(long_df)
+short_n = len(short_df)
+
+far_df = long_df.append(short_df)
+far_df['id'] = np.nan
+far_df['id'].loc[:long_n] = [i for i in range(0, long_n * 2, 2)]
+far_df['id'].loc[long_n:] = [i for i in range(1, short_n* 2 + 1, 2)]
+sort_far_df = far_df.sort_values(['id'])
+sort_far_df['cp_new'] = (sort_far_df['operation_far'] - sort_far_df['commision_far']).cumsum()
+far_idx = [i for i in range(1, len(far_df), 2)]
+far_pnl = sort_far_df["cp_new"].iloc[far_idx]
+far_pnl.plot()
+
+buy_df = whole_df[(whole_df['day_turn'] == 1) & (whole_df['buy'].notnull())]
+sell_df = whole_df[(whole_df["day_turn"] == -1) & (whole_df['sell'] != 0)]
+
+df = buy_df.append(sell_df)
+df['id'] = np.nan
+df['id'].loc[:buy_n] = [i for i in range(0, buy_n * 2, 2)]
+df['id'].loc[buy_n:] = [i for i in range(1, sell_n*2 + 1, 2)]
+sort_df = df.sort_values(['id'])
+sort_df['cp_new'] = (sort_df['operation'] - sort_df['commision']).cumsum()
+idx = [i for i in range(1, len(df) + 1, 2)]
+main_pnl = sort_df['cp_new'].iloc[idx]
+main_pnl.plot()
 
 
-pnl_df = pd.read_csv(r'D:\Document\SJTU\thesis\program\output\pnl.csv', index_col = 0)
-
-pnl_df = pd.DataFrame()
-for i in range(0, len(date_lst)):
-    date = date_lst[i]
-    data = util.open_data(date)
-    if data.empty:
-        continue
-    temp_df = pd.DataFrame()
-    temp_df['cp'] = data['cp']
-    temp_df['date'] = date
-    temp_df['datetime'] = data['datetime']
-    
-    pnl_df = pnl_df.append(temp_df)
-
-pnl_df['datetime'] = pnl_df['datetime'].apply(
-            lambda x: x[:-3] + '000' if x[-3] < "5" else x[:-3] + '500')
-pnl_df = pnl_df[~pnl_df['datetime'].duplicated()]
-pnl_df.index = pnl_df['datetime']
-mkt_pnl = pnl_df['diff']
-mkt_pnl.index = pd.to_datetime(pnl_df['datetime'])
-
+real_pnl.index = pd.to_datetime(real_pnl.index)
 fig, ax = plt.subplots()
 ax.plot(real_pnl)
-ax.plot(mkt_pnl.cumsum())
 fig.autofmt_xdate()
-plt.title("20190423-20200701 IF (no commission fee)")
-plt.savefig(r'D:\Document\SJTU\thesis\program\output\figure\rolling_std_04230701')
+
+# fig, ax = plt.subplots(figsize = (20, 12))
+# ax.plot(real_pnl.values)
+# ax.set_axisbelow(True)
+# plt.ylabel("profit & loss", size=20)
+# plt.xlabel("trading amounts", size=20)
+# ax.yaxis.grid(color='gray', linestyle='dashed')
+# plt.title("20190423-20200701 rolling model, k=" + str(k), size = 25)
+
+
+# pnl_df = pd.read_csv(r'...', index_col = 0)
+
+# pnl_df['datetime'] = pnl_df['datetime.1'].apply(
+#             lambda x: x[:-3] + '000' if x[-3] < "5" else x[:-3] + '500')
+# pnl_df = pnl_df[~pnl_df['datetime'].duplicated()]
+# pnl_df.index = pnl_df['datetime']
+# pnl_df['diff'] = pnl_df['cp'].diff()
+# mkt_pnl = pnl_df['diff']
+# mkt_pnl.index = pd.to_datetime(pnl_df['datetime'])
+# mkt_pnl.cumsum().plot()
+
+# fig, ax = plt.subplots()
+# ax.plot(real_pnl)
+# ax.plot(mkt_pnl.cumsum())
+# fig.autofmt_xdate()
+# plt.title("20190423-20200701 IF (no commission fee)")
+# plt.savefig(r'...')
